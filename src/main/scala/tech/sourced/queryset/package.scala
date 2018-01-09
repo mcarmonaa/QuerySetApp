@@ -3,6 +3,7 @@ package tech.sourced
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.udf
 
+
 package object queryset {
 
   private[queryset] def identifyLicense: UserDefinedFunction = {

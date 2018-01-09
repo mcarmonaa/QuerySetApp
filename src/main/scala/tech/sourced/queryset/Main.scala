@@ -4,6 +4,7 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.SparkSession
 import tech.sourced.engine._
 
+
 object Main extends App {
 
   val spark = SparkSession.builder().getOrCreate()
@@ -17,7 +18,7 @@ object Main extends App {
 
   val engine = Engine(spark, reposPath, reposFormat)
 
-  BoaQueries.run(engine, spark)
-  SourcedQueries.run(engine, spark)
+  BoaQueries(spark).run(engine)
+  SourcedQueries(spark).run(engine)
 
 }

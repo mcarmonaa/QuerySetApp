@@ -5,10 +5,10 @@
 #### Submit appication to a cluster
 
 ```bash
-$SPARK_HOME/bin/spark-submit \\
-    - -name "QuerySetApp" \
-    --class "tech.sourced.queryset.Main" \\
-    --master $SPARK_MASTER \\
+$SPARK_HOME/bin/spark-submit \
+    --name "QuerySetApp" \
+    --class "tech.sourced.queryset.Main" \
+    --master $SPARK_MASTER \
     path/to/queryset-0.1.0.jar $REPOS_PATH $REPOS_FORMAT
 ```
 
@@ -31,15 +31,15 @@ $SPARK_HOME/bin/spark-submit \\
 
 It leaves the fatjar under `target/scala-2.11/queryset-0.1.0.jar`
 
-- Run application in local, by default it uses the repositories under `src/main/resources/siva-files`:
+- Run application in local uses the repositories under `src/main/resources/siva-files` by default:
 
     make run
 
 - Submit application to a cluster:
 
 ```bash
-    SPARK_MASTER="spark://p-spark-master:7077" \\
-    REPOS_PATH="/path/to/repos" \\
-    REPOS_FORMAT="siva" \\
+    SPARK_MASTER="spark://p-spark-master:7077" \
+    REPOS_PATH="/path/to/repos" \
+    REPOS_FORMAT="siva" \
     make run
 ```
