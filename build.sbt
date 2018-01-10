@@ -13,8 +13,7 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       SparkSql % Provided,
       SourcedEngine % Compile classifier "slim"
-    ),
-    dependencyOverrides += SparkGuava
+    )
   )
 
 assemblyJarName in assembly := s"${name.value}-${version.value}.jar"
@@ -24,3 +23,8 @@ assemblyMergeStrategy in assembly := {
     val oldStrategy = (assemblyMergeStrategy in assembly).value
     oldStrategy(x)
 }
+
+assemblyShadeRules in assembly := Seq(
+  ShadeRule.rename("com.google.common.**" -> "com.google.shadedcommon.@1").inAll,
+  ShadeRule.rename("io.netty.**" -> "io.shadednetty.@1").inAll
+)
