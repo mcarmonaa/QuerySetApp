@@ -28,10 +28,9 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
   override val Colour: String = Console.GREEN_B
 
   override val queries: Seq[(Engine) => Unit] =
-    ProgrammingLanguages.queries ++ ProjectManagement.queries ++ Legal.queries
+    ProgrammingLanguages.queries ++ ProjectManagement.queries ++ Legal.queries ++
+      SourceCode.queries
 
-  // ProgrammingLanguages.queries ++ ProjectManagement.queries ++ Legal.queries ++
-  // PlatformEnvironment.queries ++ SourceCode.queries ++ SoftwareEngineeringMetrics.queries
 
   /*
   PROGRAMMING LANGUAGES
@@ -432,23 +431,48 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
   }
 
   /*
-  !!! SOURCE CODE
+  SOURCE CODE
   1. What are the five largest projects, in terms of AST nodes?
-  2. How many valid Java files in latest snapshot?
-  3. How many fixing revisions added null checks?
-  4. What files have unreachable statements?
-  5. How many generic fields are declared in each project?
-  6. How is varargs used over time?
-  7. How is transient keyword used in Java?
+  !!! 2. How many valid Java files in latest snapshot?
+  !!! 3. How many fixing revisions added null checks?
+  !!! 4. What files have unreachable statements?
+  !!! 5. How many generic fields are declared in each project?
+  !!! 6. How is varargs used over time?
+  !!! 7. How is transient keyword used in Java?
   */
 
   private object SourceCode extends QueryExecutor {
 
     override val queries: Seq[(Engine) => Unit] = Seq(
-      x
+      largestProjectsPerASTNodes
     )
 
-    def x(engine: Engine): Unit = ???
+    // 1.
+    def largestProjectsPerASTNodes(engine: Engine): Unit = {
+      val blobsDf = engine
+        .getRepositories
+        .getMaster
+        .getCommits
+        .getFirstReferenceCommit
+        .getBlobs
+        .classifyLanguages
+        .where("lang='Python' OR lang='Java'")
+        .extractUASTs()
+        .cache()
+
+      val reposDf = blobsDf
+        .filter(size('uast) > 0)
+        .queryUAST("//*", "uast", "result")
+        .withColumn("uast_nodes", size('result))
+        .groupBy('repository_id)
+        .sum("uast_nodes")
+        .withColumnRenamed("sum(uast_nodes)", "uast_nodes")
+        .orderBy('uast_nodes.desc)
+
+      val NumOfRepos = 5
+      printMessage(s"$NumOfRepos largest projects in terms of AST nodes:")
+      reposDf.show(NumOfRepos, false)
+    }
 
   }
 
