@@ -46,4 +46,21 @@ package object queryset {
       "The Unlicense", "This is free and unencumbered software released into the public domain.",
       "")
   )
+
+  private[queryset] def lookForDbs: UserDefinedFunction = {
+    udf[Array[String], Array[Byte]](rawContent => {
+      val content = rawContent.map(_.toChar).mkString
+      val dbList = DbMap.keys.filter(dbName =>
+        DbMap(dbName).exists(content.contains(_))
+      ).toArray
+
+      dbList
+    })
+  }
+
+  private[this] val DbMap: Map[String, Seq[String]] = Map(
+    "MySql" -> Seq("MySql", "mysql", "MYSQL"),
+    "PostgreSQL" -> Seq("Postgre", "postgre", "POSTGRE"),
+    "SQLite" -> Seq("SQLite", "sqlite", "SQLITE")
+  )
 }

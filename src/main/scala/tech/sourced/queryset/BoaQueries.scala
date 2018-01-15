@@ -4,11 +4,14 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import tech.sourced.engine._
 
+import scala.collection.mutable
+
 
 //ISSUES:
 //- Licenses
 //- Repositories' main language
 //- Join between two DataFrame coming from a GitRelation is not allowed by the GitOptimizer
+//- langsDf.where("lang='Python'").extractUASTs() , the filter is applied after the uast extraction!
 
 // see https://github.com/src-d/engine/issues/218
 object BoaQueries {
@@ -29,7 +32,7 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
 
   override val queries: Seq[(Engine) => Unit] =
     ProgrammingLanguages.queries ++ ProjectManagement.queries ++ Legal.queries ++
-      SourceCode.queries
+      PlatformEnvironment.queries ++ SourceCode.queries
 
 
   /*
@@ -43,13 +46,13 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
 
     override val queries: Seq[(Engine) => Unit] = Seq(
       mostUsedLanguages,
-      projectUsingMoreThanXLanguages,
-      projectsUsingXLanguage
+      projectUsingMoreThanOneLanguages,
+      projectsUsingALanguage
     )
 
     // 1.
     def mostUsedLanguages(engine: Engine): Unit = {
-      val NumOfLangs = 10
+      val NumberOfLangs = 10
       val langsDf = engine
         .getRepositories
         .getReferences
@@ -58,16 +61,15 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getBlobs
         .classifyLanguages
         .where("lang IS NOT NULL")
-        .cache()
 
-      val mostUsedLangsDf = langsDf.groupBy('lang).count().orderBy('count.desc).cache()
-      printMessage(s"$NumOfLangs most used languages:")
-      mostUsedLangsDf.show(NumOfLangs, false)
+      val mostUsedLangsDf = langsDf.groupBy('lang).count().orderBy('count.desc)
+      printMessage(s"$NumberOfLangs most used languages:")
+      mostUsedLangsDf.show(NumberOfLangs, false)
     }
 
     // 2.
-    def projectUsingMoreThanXLanguages(engine: Engine): Unit = {
-      val NumOfLangs = 1
+    def projectUsingMoreThanOneLanguages(engine: Engine): Unit = {
+      val NumberOfLangs = 1
 
       val langsDf = engine
         .getRepositories
@@ -76,22 +78,20 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getFirstReferenceCommit
         .getBlobs
         .classifyLanguages
-        .cache()
 
       val projectLanguagesDf = langsDf
         .groupBy('repository_id)
         .agg(collect_set('lang) as "langs")
-        .filter(size('langs) > NumOfLangs)
-        .cache()
+        .filter(size('langs) > NumberOfLangs)
 
       val NumberOfProjects = projectLanguagesDf.count()
-      printMessage(s"Projects using more than $NumOfLangs language: $NumberOfProjects")
+      printMessage(s"Projects using more than $NumberOfLangs language: $NumberOfProjects")
       projectLanguagesDf.show(RowsToShow, false)
     }
 
     // 3.
-    def projectsUsingXLanguage(engine: Engine): Unit = {
-      val XLang = "Gradle"
+    def projectsUsingALanguage(engine: Engine): Unit = {
+      val Language = "Gradle"
 
       val langsDf = engine
         .getRepositories
@@ -101,18 +101,17 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getBlobs
         .classifyLanguages
         .where("lang IS NOT NULL")
-        .cache()
 
       val projectsLangsDf = langsDf
         .groupBy('repository_id)
         .agg(collect_set('lang) as "langs")
         .filter(row => {
           val langs = row.getSeq(1)
-          langs.contains(XLang)
-        }).cache()
+          langs.contains(Language)
+        })
 
       val NumberOfProjects = projectsLangsDf.count()
-      printMessage(s"Projects using language $XLang: $NumberOfProjects")
+      printMessage(s"Projects using language $Language: $NumberOfProjects")
       projectsLangsDf.show(RowsToShow, false)
     }
 
@@ -125,7 +124,7 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
   3. How many Java projects using SVN were active in 2011? (Git instead SVN, projects containing Java files)
   4. In which year was SVN added to Java projects the most? (Year when most of the Java projects were created)
   5. How many revisions are there in all Java projects using SVN? (Git,Commits in master branch, repos with Shell files)
-  !!! 6. How many revisions fix bugs in all Java projects using SVN?
+  6. How many revisions fix bugs in all Java projects using SVN? (commits containing "fix" in their messages)
   7. How many committers are there for each project?
   !!! 8. What are the churn rates for all projects?
   9. How did the number of commits for Java projects using SVN change over years?
@@ -136,16 +135,17 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
 
     override val queries: Seq[(Engine) => Unit] = Seq(
       projectsCreatedPerYear,
-      projectsUsingXLangActivePerYear,
-      yearMoreXLangProjectCreated,
-      numberOfCommitsXLangProjects,
+      projectsUsingALangActivePerYear,
+      yearMoreLangProjectCreated,
+      numberOfCommitsLangProjects,
+      commitsFixingBugs,
       committersPerProject,
       numberOfCommitsXLangProjectPerYear
     )
 
     // 1.
     def projectsCreatedPerYear(engine: Engine): Unit = {
-      val commitsDf = engine.getRepositories.getReferences.getCommits.cache()
+      val commitsDf = engine.getRepositories.getReferences.getCommits
 
       printMessage(s"Projects created per year:")
       commitsDf
@@ -158,8 +158,8 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
     }
 
     // 3. Git, instead SVN. Projects containing Java files
-    def projectsUsingXLangActivePerYear(engine: Engine): Unit = {
-      val XLang = "Java"
+    def projectsUsingALangActivePerYear(engine: Engine): Unit = {
+      val Language = "Java"
       val Year = 2015
 
       val commitsDf = engine.getRepositories.getReferences.getHEAD.getCommits
@@ -175,28 +175,28 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
 
       val languageDf = langsDf
         .groupBy('repository_id)
-        .pivot("lang", Seq(XLang))
+        .pivot("lang", Seq(Language))
         .count()
-        .filter(col(XLang).isNotNull)
-        .orderBy(desc(XLang))
+        .filter(col(Language).isNotNull)
+        .orderBy(desc(Language))
 
       // !!! Note that two DataFrames coming from a GitRelation can't be joined
       // because of the GitOptimizer.
       //
       // Workaround: retrieve a list of the needed repositories and broadcast it.
-      val repos: Seq[String] = getReposLang(spark, XLang, langsDf)
+      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
       val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
 
       val projectsDf = yearDf.filter('repository_id.isin(reposB.value: _*))
       val NumberOfProjects = projectsDf.count()
 
-      printMessage(s"Projects using $XLang language active in $Year: $NumberOfProjects")
+      printMessage(s"Projects using $Language language active in $Year: $NumberOfProjects")
       projectsDf.show(RowsToShow, false)
     }
 
     // 4. Year when most of the Java projects were created
-    def yearMoreXLangProjectCreated(engine: Engine): Unit = {
-      val XLang = "Java"
+    def yearMoreLangProjectCreated(engine: Engine): Unit = {
+      val Language = "Java"
       val langsDf = engine
         .getRepositories
         .getReferences
@@ -204,13 +204,12 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getCommits
         .getBlobs
         .classifyLanguages
-        .cache()
 
       // !!! Note that two DataFrames coming from a GitRelation can't be joined
       // because of the GitOptimizer.
       //
       // Workaround: retrieve a list of the needed repositories and broadcast it.
-      val repos: Seq[String] = getReposLang(spark, XLang, langsDf)
+      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
       val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
 
       val commitsDf = engine
@@ -220,7 +219,6 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getCommits
         .filter('repository_id.isin(reposB.value: _*))
         .withColumn("year", year('committer_date))
-        .cache()
 
       val numOfReposPerYearDf = commitsDf
         .groupBy("year")
@@ -232,15 +230,15 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
       val YearAmountPair: Row = numOfReposPerYearDf.first
       val Year = YearAmountPair.getInt(0)
       val Amount = YearAmountPair.getInt(1)
-      printMessage(s"Year when more $XLang repositories were created: " +
+      printMessage(s"Year when more $Language repositories were created: " +
         s"$Year with $Amount repositories")
 
       numOfReposPerYearDf.show(RowsToShow, false)
     }
 
     // 5. Git,Commits in master branch, repos with Shell files
-    def numberOfCommitsXLangProjects(engine: Engine): Unit = {
-      val XLang = "Shell"
+    def numberOfCommitsLangProjects(engine: Engine): Unit = {
+      val Language = "Shell"
       val langsDf = engine
         .getRepositories
         .getReferences
@@ -253,7 +251,7 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
       // because of the GitOptimizer.
       //
       // Workaround: retrieve a list of the needed repositories and broadcast it.
-      val repos: Seq[String] = getReposLang(spark, XLang, langsDf)
+      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
       val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
 
       val projectsDf = langsDf
@@ -264,9 +262,41 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .cache()
 
       val NumberOfCommits = projectsDf.agg(sum("commits_amount")).first().getLong(0)
-      printMessage(s"Number of commits from projects using $XLang language: $NumberOfCommits")
+      printMessage(s"Number of commits from projects using $Language language: $NumberOfCommits")
       projectsDf.show(RowsToShow, false)
     }
+
+    // 6.
+    def commitsFixingBugs(engine: Engine): Unit = {
+      val Language = "Java"
+
+      val commitsDf = engine
+        .getRepositories
+        .getMaster
+        .getCommits
+        .filter('message.contains("fix") || 'message.contains("Fix") || 'message.contains("FIX"))
+
+      val commits: Seq[String] = engine
+        .getRepositories
+        .getMaster
+        .getCommits
+        .getBlobs
+        .classifyLanguages
+        .where(s"lang='${Language}'")
+        .select('commit_hash)
+        .distinct()
+        .map(_.getString(0))
+        .collect()
+        .toList
+
+      val commitsB = spark.sparkContext.broadcast(commits)
+      val commitsFixDf = commitsDf.filter('hash.isin(commitsB.value: _*))
+
+      val NumberOfCommits = commitsFixDf.count()
+      printMessage(s"Numbet of commits fixing bugs in $Language repositories: $NumberOfCommits")
+      commitsFixDf.show(RowsToShow)
+    }
+
 
     // 7.
     def committersPerProject(engine: Engine): Unit = {
@@ -279,9 +309,9 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .show(RowsToShow, false)
     }
 
-    // 9. Number of commits in master branch per year for projects which contains XLang files.
+    // 9. Number of commits in master branch per year for projects which contains some 'Lang' files.
     def numberOfCommitsXLangProjectPerYear(engine: Engine): Unit = {
-      val XLang = "Java"
+      val Language = "Java"
       val langsDf = engine
         .getRepositories
         .getReferences
@@ -289,13 +319,12 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getCommits
         .getBlobs
         .classifyLanguages
-        .cache()
 
       // !!! Note that two DataFrames coming from a GitRelation can't be joined
       // because of the GitOptimizer.
       //
       // Workaround: retrieve a list of the needed repositories and broadcast it.
-      val repos: Seq[String] = getReposLang(spark, XLang, langsDf)
+      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
       val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
 
       val commitsDf = engine
@@ -304,7 +333,6 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getMaster
         .getCommits
         .withColumn("year", year('committer_date))
-        .cache()
 
       val commitsPerYearDf = commitsDf
         .groupBy('repository_id)
@@ -320,7 +348,7 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         reposDf.filter(reposDf(column).isNull).count() == reposDf.count()
       )
 
-      printMessage(s"Number of commits per year for projects using $XLang language:")
+      printMessage(s"Number of commits per year for projects using $Language language:")
       reposDf.drop(nullCols: _*).show(RowsToShow, false)
     }
 
@@ -362,12 +390,10 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getCommits
         .getFirstReferenceCommit
         .getBlobs
-        .cache()
 
       val licenseDf = blobsDf
         .filter('path.contains("LICENSE") || 'path.contains("license") || 'path.contains("License"))
         .withColumn("license", identifyLicense('content))
-        .cache()
 
       printMessage("Most used licenses:")
       licenseDf
@@ -375,11 +401,6 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .count()
         .orderBy('count)
         .show(false)
-
-      // to debug
-      // licenseDf
-      //  .select('repository_id, 'path, 'license)
-      //  .show(56, false)
     }
 
     //2.
@@ -391,12 +412,10 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .getCommits
         .getFirstReferenceCommit
         .getBlobs
-        .cache()
 
       val licenseDf = blobsDf
         .filter('path.contains("LICENSE") || 'path.contains("license") || 'path.contains("License"))
         .withColumn("license", identifyLicense('content))
-        .cache()
 
       val projectLicensesDf = licenseDf
         .groupBy('repository_id)
@@ -415,25 +434,62 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
   !!! PLATFORM/ENVIRONMENT
   1. What are the five most supported operating systems?
   2. Which projects support multiple operating systems?
-  3. What are the five most popular databases?
-  4. What are the projects that support multiple databases?
-  5. How often is each database used in each programming language?
+
+  *** 3. What are the five most popular databases?
+
+  *** 4. What are the projects that support multiple databases?
+
+  *** 5. How often is each database used in each programming language?
   */
 
   private object PlatformEnvironment extends QueryExecutor {
 
     override val queries: Seq[(Engine) => Unit] = Seq(
-      x
+      mostPopularDatabases
     )
 
-    def x(engine: Engine): Unit = ???
+    def mostPopularDatabases(engine: Engine): Unit = {
+      val blobsDf = engine
+        .getRepositories
+        .getMaster
+        .where("is_remote=true")
+        .getCommits
+        .getFirstReferenceCommit
+        .getBlobs
+        .withColumn("databases", lookForDbs('content))
+        .select('repository_id, 'blob_id, 'path, 'databases)
+
+      val reposDatbaseDf = blobsDf
+        .groupBy('repository_id)
+        .agg(collect_set('databases) as "db")
+        .map(row => {
+          val databases = row.getAs[mutable.WrappedArray[mutable.WrappedArray[String]]]("db")
+            .flatten.distinct.toArray
+
+          (row.getString(0), databases)
+        }).toDF("repository_id", "databases")
+
+      printMessage(s"Datbases used per repository:")
+      reposDatbaseDf.show(RowsToShow, false)
+
+      val reposPerDbDf = reposDatbaseDf
+        .withColumn("database", explode('databases))
+        .groupBy('database)
+        .count()
+        .withColumnRenamed("count", "repositories_amount")
+        .orderBy('repositories_amount.desc)
+
+      printMessage(s"Number of repositories using a database:")
+      reposPerDbDf.show(RowsToShow, false)
+    }
 
   }
 
   /*
   SOURCE CODE
   1. What are the five largest projects, in terms of AST nodes?
-  !!! 2. How many valid Java files in latest snapshot?
+  2. How many valid Java files in latest snapshot? (invalid Python files in latest snapshot)
+
   !!! 3. How many fixing revisions added null checks?
   !!! 4. What files have unreachable statements?
   !!! 5. How many generic fields are declared in each project?
@@ -444,7 +500,8 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
   private object SourceCode extends QueryExecutor {
 
     override val queries: Seq[(Engine) => Unit] = Seq(
-      largestProjectsPerASTNodes
+      largestProjectsPerASTNodes,
+      invalidLangFilesInLatestSnapshot
     )
 
     // 1.
@@ -468,10 +525,39 @@ class BoaQueries(spark: SparkSession) extends QueryExecutor with OutcomePrinter 
         .sum("uast_nodes")
         .withColumnRenamed("sum(uast_nodes)", "uast_nodes")
         .orderBy('uast_nodes.desc)
+        .cache()
 
       val NumOfRepos = 5
       printMessage(s"$NumOfRepos largest projects in terms of AST nodes:")
       reposDf.show(NumOfRepos, false)
+    }
+
+    // 2.
+    def invalidLangFilesInLatestSnapshot(engine: Engine): Unit = {
+      val Language = "Python"
+
+      val langsDf = engine
+        .getRepositories
+        .getMaster
+        .getCommits
+        .getFirstReferenceCommit
+        .getBlobs
+        .classifyLanguages
+
+      val invalidBlobsDf = langsDf
+        .where(s"lang='$Language'")
+        .extractUASTs()
+        .filter(size('uast) === 0)
+        .select('repository_id, 'blob_id, 'path, 'uast)
+
+      val invalidBlobsPerRepoDf = invalidBlobsDf
+        .groupBy('repository_id)
+        .agg(collect_set('blob_id) as "invalid_blobs")
+        .withColumn("invalid_blobs_amount", size('invalid_blobs))
+        .cache()
+
+      printMessage(s"Invalid $Language blobs in the latest commits:")
+      invalidBlobsPerRepoDf.show(RowsToShow, false)
     }
 
   }
