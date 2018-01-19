@@ -24,6 +24,7 @@ package object queryset {
   private[this] case class License(id: String, matcher: String, version: String)
 
   //see https://spdx.org/licenses/
+  // Example list of licenses
   private[this] val Licenses: Seq[License] = Seq(
     License("AGPL-3.0", "GNU AFFERO GENERAL PUBLIC LICENSE", "Version 3"),
     License("GPL-1.0", "GNU GENERAL PUBLIC LICENSE", "Version 1"),
@@ -58,9 +59,14 @@ package object queryset {
     })
   }
 
+  // Example list of databases
   private[this] val DbMap: Map[String, Seq[String]] = Map(
     "MySql" -> Seq("MySql", "mysql", "MYSQL"),
     "PostgreSQL" -> Seq("Postgre", "postgre", "POSTGRE"),
-    "SQLite" -> Seq("SQLite", "sqlite", "SQLITE")
+    "SQLite" -> Seq("SQLite", "sqlite", "SQLITE"),
+    "MongoDB" -> Seq("Mongo, mongo, MONGO"),
+    "Cassandra" -> Seq("Cassandra, cassandra, CASSANDRA"),
+    "Oracle" -> Seq("Oracle", "oracle", "ORACLE")
   )
+
 }

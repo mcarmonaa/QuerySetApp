@@ -18,7 +18,7 @@ object Main extends App {
 
   val engine = Engine(spark, reposPath, reposFormat)
 
-  BoaQueries(spark).run(engine)
-  SourcedQueries(spark).run(engine)
+  BoaQueries(spark, engine).run()
+  SourcedQueries(spark, engine).run()
 
 }
