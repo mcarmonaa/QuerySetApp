@@ -9,6 +9,9 @@ $SPARK_HOME/bin/spark-submit \
     --name "QuerySetApp" \
     --class "tech.sourced.queryset.Main" \
     --master $SPARK_MASTER \
+    --num-executors $NUM_EXECUTORS \
+    --executor-memory $EXECUTOR_MEM  \
+    --total-executor-cores $EXECUTOR_CORES \
     path/to/queryset-0.1.0.jar $REPOS_PATH $REPOS_FORMAT
 ```
 
@@ -16,9 +19,11 @@ $SPARK_HOME/bin/spark-submit \
 
 - `SPARK_MASTER` environment variable must point to the [master URL](https://spark.apache.org/docs/latest/submitting-applications.html#master-urls) for the cluster (e.g. `spark://p-spark-master:7077`)
 
+- `NUM_EXECUTORS`, `EXECUTOR_MEM`, `EXECUTOR_CORES`: [Executor configuration parameters](https://spark.apache.org/docs/latest/submitting-applications.html) (eg: `3`, `4G`, `64`).
+
 - `REPOS_PATH` must point to the directory which contains the repositories.
 
-- `REPOS_FORMAT` must specify the repositories' format (e.g. `siva`)
+- `REPOS_FORMAT` must specify the repositories' format (e.g. `siva`, `standard`)
 
 #### Development
 - First you should set the `Spark` directory:
