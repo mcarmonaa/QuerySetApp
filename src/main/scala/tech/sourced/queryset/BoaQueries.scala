@@ -7,26 +7,17 @@ import tech.sourced.engine._
 import scala.collection.mutable
 
 
-//ISSUES:
-//- filters to 'uast column can't be applied yet because UDFs being executed many times
-// see https://github.com/src-d/engine/issues/314
-// So if there is a filter to 'uast column, it makes previous filters on 'lang column "be
-// ignored" and the uast extraction is applied to all the blobs.
-
-
 // see https://github.com/src-d/engine/issues/218
 object BoaQueries {
 
-  def apply(spark: SparkSession, engine: Engine): BoaQueries = new BoaQueries(spark, engine)
+  def apply(engine: Engine): BoaQueries = new BoaQueries(engine)
 
 }
 
-class BoaQueries(spark: SparkSession,
-                 override val engine: Engine
-                ) extends QueryExecutor with OutcomePrinter {
+class BoaQueries(override val engine: Engine) extends QueryExecutor with OutcomePrinter {
 
+  import engine.session.sqlContext.implicits._
   import org.apache.spark.sql.functions._
-  import spark.sqlContext.implicits._
 
   private val RowsToShow: Int = 5
 
@@ -46,7 +37,6 @@ class BoaQueries(spark: SparkSession,
     .getCommits
 
   private val blobsDf = commitsDf
-    .getFirstReferenceCommit
     .getBlobs
     .classifyLanguages
 
@@ -145,6 +135,7 @@ class BoaQueries(spark: SparkSession,
     def projectsCreatedPerYear(engine: Engine): Unit = {
       printMessage(s"Projects created per year:")
       commitsDf
+        .getAllReferenceCommits
         .withColumn("year", year('committer_date))
         .groupBy('repository_id).min("year")
         .groupBy("min(year)").count
@@ -159,6 +150,7 @@ class BoaQueries(spark: SparkSession,
       val Year = 2015
 
       val yearDf = commitsDf
+        .getAllReferenceCommits
         .withColumn("year", year('committer_date))
         .filter('year === Year)
         .groupBy('repository_id)
@@ -174,8 +166,8 @@ class BoaQueries(spark: SparkSession,
         .filter(col(Language).isNotNull)
         .orderBy(desc(Language))
 
-      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
-      val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
+      val repos: Seq[String] = getReposLang(Language, langsDf)
+      val reposB: Broadcast[Seq[String]] = engine.session.sparkContext.broadcast(repos)
 
       val projectsDf = yearDf.filter('repository_id.isin(reposB.value: _*))
       val NumberOfProjects = projectsDf.count()
@@ -191,10 +183,11 @@ class BoaQueries(spark: SparkSession,
         .getBlobs
         .classifyLanguages
 
-      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
-      val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
+      val repos: Seq[String] = getReposLang(Language, langsDf)
+      val reposB: Broadcast[Seq[String]] = engine.session.sparkContext.broadcast(repos)
 
       val yearDf = commitsDf
+        .getAllReferenceCommits
         .filter('repository_id.isin(reposB.value: _*))
         .withColumn("year", year('committer_date))
 
@@ -218,11 +211,12 @@ class BoaQueries(spark: SparkSession,
     def numberOfCommitsLangProjects(engine: Engine): Unit = {
       val Language = "Shell"
       val langsDf = commitsDf
+        .getAllReferenceCommits
         .getBlobs
         .classifyLanguages
 
-      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
-      val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
+      val repos: Seq[String] = getReposLang(Language, langsDf)
+      val reposB: Broadcast[Seq[String]] = engine.session.sparkContext.broadcast(repos)
 
       val projectsDf = langsDf
         .groupBy('repository_id)
@@ -249,6 +243,7 @@ class BoaQueries(spark: SparkSession,
         .filter('message.contains("fix") || 'message.contains("Fix") || 'message.contains("FIX"))
 
       val commits: Seq[String] = commitsDf
+        .getAllReferenceCommits
         .getBlobs
         .classifyLanguages
         .where(s"lang='${Language}'")
@@ -258,21 +253,19 @@ class BoaQueries(spark: SparkSession,
         .collect()
         .toList
 
-      val commitsB = spark.sparkContext.broadcast(commits)
+      val commitsB = engine.session.sparkContext.broadcast(commits)
       val commitsFixDf = fixDf.filter('hash.isin(commitsB.value: _*))
 
       val NumberOfCommits = commitsFixDf.count()
-      printMessage(s"Numbet of commits fixing bugs in $Language repositories: $NumberOfCommits")
+      printMessage(s"Number of commits fixing bugs in $Language repositories: $NumberOfCommits")
       commitsFixDf.show(RowsToShow)
     }
 
 
     // 7.
     def committersPerProject(engine: Engine): Unit = {
-      val committersDf = engine
-        .getRepositories
-        .getReferences
-        .getCommits
+      val committersDf = commitsDf
+        .getAllReferenceCommits
         .groupBy('repository_id)
         .agg(size(collect_set('author_name)) as "committers")
         .orderBy(desc("committers"))
@@ -289,8 +282,8 @@ class BoaQueries(spark: SparkSession,
         .getBlobs
         .classifyLanguages
 
-      val repos: Seq[String] = getReposLang(spark, Language, langsDf)
-      val reposB: Broadcast[Seq[String]] = spark.sparkContext.broadcast(repos)
+      val repos: Seq[String] = getReposLang(Language, langsDf)
+      val reposB: Broadcast[Seq[String]] = engine.session.sparkContext.broadcast(repos)
 
       val yearDf = commitsDf.withColumn("year", year('committer_date))
 
@@ -310,8 +303,7 @@ class BoaQueries(spark: SparkSession,
       reposDf.drop(nullCols: _*).show(RowsToShow, false)
     }
 
-    private def getReposLang(spark: SparkSession,
-                             lang: String,
+    private def getReposLang(lang: String,
                              langsDf: DataFrame): Seq[String] = {
 
       val repos: Seq[String] = langsDf
@@ -562,11 +554,12 @@ class BoaQueries(spark: SparkSession,
       val Query = "//MethodDeclaration/SingleVariableDeclaration[@varargs='true']"
 
       val lastCommitPerYearDf = commitsDf
+        .getAllReferenceCommits
         .select('repository_id, 'hash, 'committer_date)
         .withColumn("year", year('committer_date))
         .groupBy('repository_id, 'year)
         .agg(max('committer_date) as "committer_date")
-        .join(commitsDf, Seq("repository_id", "committer_date"))
+        .join(commitsDf.getAllReferenceCommits, Seq("repository_id", "committer_date"))
         .withColumnRenamed("repository_id", "repo_id")
 
       val varargsPerCommitDf = blobsDf
@@ -677,7 +670,6 @@ class BoaQueries(spark: SparkSession,
         .filter(size('urls) > 0)
         .getMaster
         .getCommits
-        .getFirstReferenceCommit
         .getBlobs
         .classifyLanguages
 
@@ -685,7 +677,7 @@ class BoaQueries(spark: SparkSession,
         .where(s"lang='$Language'")
         .extractUASTs()
         .queryUAST(Query)
-        // .filter(size('result) > 0)
+        .filter(size('result) > 0)
         .groupBy('repository_id)
         .agg(sum(size('result)) as "public_methods")
         .cache()

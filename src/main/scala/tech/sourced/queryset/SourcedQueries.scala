@@ -1,22 +1,18 @@
 package tech.sourced.queryset
 
-import org.apache.spark.sql.SparkSession
 import tech.sourced.engine._
 
 
 object SourcedQueries {
 
-  def apply(spark: SparkSession, engine: Engine): SourcedQueries =
-    new SourcedQueries(spark, engine)
+  def apply(engine: Engine): SourcedQueries = new SourcedQueries(engine)
 
 }
 
-class SourcedQueries(spark: SparkSession,
-                     override val engine: Engine
-                    ) extends QueryExecutor with OutcomePrinter {
+class SourcedQueries(override val engine: Engine) extends QueryExecutor with OutcomePrinter {
 
+  import engine.session.sqlContext.implicits._
   import org.apache.spark.sql.functions._
-  import spark.sqlContext.implicits._
 
   private val RowsToShow: Int = 5
 
@@ -40,7 +36,7 @@ class SourcedQueries(spark: SparkSession,
   )
 
   private def extractCommitsFromHead(engine: Engine): Unit = {
-    val commitsDf = engine.getRepositories.getReferences.getHEAD.getCommits
+    val commitsDf = engine.getRepositories.getReferences.getHEAD.getCommits.getAllReferenceCommits
     printMessage("Extract commits from HEAD reference:")
     commitsDf.show(RowsToShow)
   }
@@ -50,6 +46,7 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
+      .getAllReferenceCommits
       .where("index <= 4")
 
     printMessage("Extract and filter commits by index from HEAD reference:")
@@ -61,6 +58,7 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getMaster
       .getCommits
+      .getAllReferenceCommits
       .getTreeEntries
 
     val blobCountDf = treesDf
@@ -79,7 +77,6 @@ class SourcedQueries(spark: SparkSession,
       .filter('is_fork === false)
       .getMaster
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
 
     printMessage("Retrieving all the files at latest commit of the main branch of non-forks:")
@@ -93,7 +90,6 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
       .dropDuplicates("blob_id")
       .classifyLanguages
@@ -104,7 +100,7 @@ class SourcedQueries(spark: SparkSession,
     val methodsDf = blobsDf
       .queryUAST("//ClassDef.body/*[@roleFunction and @roleDeclaration and @roleIdentifier]")
       .extractTokens()
-      // .filter(size('result) > 0)
+      .filter(size('result) > 0)
       .select('repository_id, 'blob_id, 'path, 'tokens)
       .withColumn("method_amount", size('tokens))
 
@@ -119,7 +115,6 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
       .dropDuplicates("blob_id")
       .classifyLanguages
@@ -129,7 +124,7 @@ class SourcedQueries(spark: SparkSession,
     val tokensDf = blobsDf
       .queryUAST("//*[@roleFunction and @roleCall]/*[@roleArgument]")
       .extractTokens()
-      // .filter(size('result) > 0)
+      .filter(size('result) > 0)
       .select('repository_id, 'blob_id, 'path, 'tokens)
 
     printMessage(s"Tokens used as parameters in functions calls per ${Lang} blob:")
@@ -143,7 +138,6 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
       .dropDuplicates("blob_id")
       .classifyLanguages
@@ -153,7 +147,7 @@ class SourcedQueries(spark: SparkSession,
     val tokensDf = blobsDf
       .queryUAST("//FunctionDef//*[@roleArgument and @roleIdentifier]")
       .extractTokens()
-      // .filter(size('result) > 0)
+      .filter(size('result) > 0)
       .select('repository_id, 'blob_id, 'path, 'tokens)
 
     printMessage(s"Tokens used as arguments in function declarations per ${Lang} blob:")
@@ -167,7 +161,6 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
       .dropDuplicates("blob_id")
       .classifyLanguages
@@ -177,7 +170,7 @@ class SourcedQueries(spark: SparkSession,
     val argsDf = blobsDf
       .queryUAST("//FunctionDef//arguments.defaults/*[@roleLiteral]")
       .extractTokens()
-      // .filter(size('result) > 0)
+      .filter(size('result) > 0)
       .withColumn("num_default_args", size('tokens))
       .select('repository_id, 'blob_id, 'path, 'num_default_args)
 
@@ -192,7 +185,6 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
       .dropDuplicates("blob_id")
       .classifyLanguages
@@ -202,7 +194,7 @@ class SourcedQueries(spark: SparkSession,
     val lambdaDf = blobsDf
       .queryUAST("//Lambda[@roleFunction and @roleDeclaration]")
       .extractTokens()
-      // .filter(size('result) > 0)
+      .filter(size('result) > 0)
       .withColumn("lambda_functions", size('tokens))
       .select('repository_id, 'blob_id, 'path, 'lambda_functions)
       .orderBy('lambda_functions.desc)
@@ -219,7 +211,6 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
       .dropDuplicates("blob_id")
       .classifyLanguages
@@ -229,7 +220,7 @@ class SourcedQueries(spark: SparkSession,
     val lambdaDf = blobsDf
       .queryUAST("//MethodDeclaration/Modifier[@token='private']")
       .extractTokens()
-      // .filter(size('result) > 0)
+      .filter(size('result) > 0)
       .withColumn("private_methods", size('tokens))
       .select('repository_id, 'blob_id, 'path, 'private_methods)
       .orderBy('private_methods.desc)
@@ -246,7 +237,6 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getHEAD
       .getCommits
-      .getFirstReferenceCommit
       .getBlobs
       .dropDuplicates("blob_id")
       .classifyLanguages
@@ -256,7 +246,7 @@ class SourcedQueries(spark: SparkSession,
     val lambdaDf = blobsDf
       .queryUAST("//LineComment[@roleComment]")
       .extractTokens()
-      // .filter(size('result) > 0)
+      .filter(size('result) > 0)
       .withColumn("commented_lines", size('tokens))
       .select('repository_id, 'blob_id, 'path, 'commented_lines)
       .orderBy('commented_lines.desc)
@@ -274,6 +264,7 @@ class SourcedQueries(spark: SparkSession,
       .getRepositories
       .getReferences
       .getCommits
+      .getAllReferenceCommits
       .dropDuplicates("hash")
       .filter(year('committer_date) === Year)
       .withColumn("month", month('committer_date))
