@@ -3,7 +3,7 @@ import Dependencies._
 lazy val commonSettings = Seq(
   organization := "tech.sourced",
   scalaVersion := "2.11.12",
-  version := "0.1.0"
+  version := "0.2.0"
 )
 
 lazy val root = (project in file("."))
